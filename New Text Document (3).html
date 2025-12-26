@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Love Particles Mobile</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            color: white;
+            -webkit-user-select: none; /* Chặn chọn văn bản trên đt */
+            user-select: none;
+        }
+
+        /* Video input ẩn */
+        #input_video {
+            position: absolute;
+            top: 0; left: 0;
+            width: 1px; height: 1px;
+            opacity: 0;
+            z-index: -1;
+        }
+
+        /* UI Container - Responsive */
+        #ui-container {
+            position: absolute;
+            z-index: 10;
+            background: rgba(20, 20, 20, 0.6);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px); /* Cho Safari iOS */
+            padding: 20px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        /* Desktop Style */
+        @media (min-width: 769px) {
+            #ui-container {
+                top: 20px;
+                left: 20px;
+                width: 250px;
+            }
+        }
+
+        /* Mobile Style (Màn hình dọc) */
+        @media (max-width: 768px) {
+            #ui-container {
+                bottom: 20px; /* Nằm dưới đáy */
+                left: 15px;
+                right: 15px;
+                width: auto; /* Full chiều ngang */
+                padding: 15px;
+            }
+            
+            h1 { font-size: 16px !important; }
+            .instruction { font-size: 10px !important; }
+        }
+
+        h1 {
+            font-size: 18px;
+            margin: 0 0 10px 0;
+            font-weight: 700;
+            background: linear-gradient(to right, #ff4d6d, #ff8fa3);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .control-group { margin-bottom: 10px; }
+        
+        label {
+            display: block;
+            font-size: 11px;
+            margin-bottom: 5px;
+            color: #ddd;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Custom Color Picker cho đẹp hơn */
+        .color-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        input[type="color"] {
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            overflow: hidden;
+            cursor: pointer;
+            background: none;
+            padding: 0;
+        }
+        
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; border: 2px solid #fff; }
+
+        #status {
+            font-size: 13px;
+            color: #00ff88;
+            margin-top: 5px;
+            font-weight: 500;
+        }
+
+        .instruction {
+            font-size: 11px;
+            color: #aaa;
+            margin-top: 10px;
+            line-height: 1.4;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            padding-top: 8px;
+        }
+        
+        /* Preview Canvas nhỏ */
+        #preview-canvas {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 100px; /* Nhỏ hơn trên mobile */
+            height: 75px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.3);
+            z-index: 5;
+            transform: scaleX(-1);
+            opacity: 0.8;
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+
+    <video id="input_video" playsinline webkit-playsinline muted></video>
+    
+    <canvas id="preview-canvas"></canvas>
+
+    <div id="ui-container">
+        <h1>Love AI Mobile</h1>
+        <div class="control-group">
+            <label>Màu Hạt</label>
+            <div class="color-wrapper">
+                <input type="color" id="colorPicker" value="#ff4d6d">
+                <span style="font-size: 12px; color: #fff;">Chạm để đổi màu</span>
+            </div>
+        </div>
+        <div id="status">Đang mở camera...</div>
+        <div class="instruction">
+            👋 <b>Dựng điện thoại lên & lùi ra xa.</b><br>
+            Đưa 2 tay vào khung hình:
+            <br>• <b>Khép tay:</b> I ♥ U
+            <br>• <b>Dang tay:</b> Nổ tung
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- CẤU HÌNH ---
+        const CONFIG = {
+            particleCount: 2500, // Giảm nhẹ cho mobile đỡ lag
+            particleSize: 0.2,   // To hơn xíu cho dễ nhìn trên đt
+            spreadRadius: 12,
+            textScale: 0.12,
+            morphSpeed: 0.08
+        };
+
+        let scene, camera, renderer, particles;
+        let targetPositions, randomPositions;
+        let interactionFactor = 0; 
+        let material;
+
+        const statusEl = document.getElementById('status');
+        const colorPicker = document.getElementById('colorPicker');
+        const previewCanvas = document.getElementById('preview-canvas');
+        const previewCtx = previewCanvas.getContext('2d');
+
+        function initThree() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x050505, 0.025);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            // TỰ ĐỘNG ĐIỀU CHỈNH CAMERA DỰA TRÊN MÀN HÌNH
+            adjustCameraPosition();
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Giới hạn pixel ratio để đỡ nóng máy
+            document.body.appendChild(renderer.domElement);
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                adjustCameraPosition();
+            });
+
+            createParticles();
+            animate();
+        }
+
+        function adjustCameraPosition() {
+            const aspect = window.innerWidth / window.innerHeight;
+            if (aspect < 1) {
+                // Màn hình dọc (Điện thoại): Lùi xa hơn
+                camera.position.z = 22; 
+            } else {
+                // Màn hình ngang (PC): Gần hơn
+                camera.position.z = 12;
+            }
+        }
+
+        function createParticles() {
+            const textPoints = getTextPoints("I ♥ U");
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(CONFIG.particleCount * 3);
+            
+            targetPositions = new Float32Array(CONFIG.particleCount * 3);
+            randomPositions = new Float32Array(CONFIG.particleCount * 3);
+
+            for (let i = 0; i < CONFIG.particleCount; i++) {
+                // Target: Chữ
+                const pIndex = i % textPoints.length;
+                targetPositions[i * 3] = textPoints[pIndex].x;
+                targetPositions[i * 3 + 1] = textPoints[pIndex].y;
+                targetPositions[i * 3 + 2] = (Math.random() - 0.5) * 1.5;
+
+                // Random: Hình cầu
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos((Math.random() * 2) - 1);
+                const r = 6 + Math.random() * CONFIG.spreadRadius;
+
+                randomPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+                randomPositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+                randomPositions[i * 3 + 2] = r * Math.cos(phi);
+
+                positions[i * 3] = randomPositions[i * 3];
+                positions[i * 3 + 1] = randomPositions[i * 3 + 1];
+                positions[i * 3 + 2] = randomPositions[i * 3 + 2];
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+            const sprite = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png');
+
+            material = new THREE.PointsMaterial({
+                color: new THREE.Color(colorPicker.value),
+                size: CONFIG.particleSize,
+                map: sprite,
+                transparent: true,
+                opacity: 0.9,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+        }
+
+        function getTextPoints(text) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const width = 250; // Canvas rộng hơn chút
+            const height = 100;
+            canvas.width = width;
+            canvas.height = height;
+
+            ctx.fillStyle = '#FFFFFF';
+            // Font đậm hơn để rõ trên mobile
+            ctx.font = '900 50px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto'; 
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, width / 2, height / 2);
+
+            const imageData = ctx.getImageData(0, 0, width, height);
+            const data = imageData.data;
+            const points = [];
+
+            for (let y = 0; y < height; y += 2) {
+                for (let x = 0; x < width; x += 2) {
+                    if (data[(y * width + x) * 4 + 3] > 128) {
+                        points.push({
+                            x: (x - width / 2) * CONFIG.textScale,
+                            y: -(y - height / 2) * CONFIG.textScale,
+                        });
+                    }
+                }
+            }
+            return points;
+        }
+
+        // --- MEDIAPIPE SETUP ---
+        const videoElement = document.getElementById('input_video');
+
+        function onResults(results) {
+            // Chỉ vẽ lên preview canvas, không log ra console để đỡ lag
+            previewCtx.save();
+            previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+            previewCtx.drawImage(results.image, 0, 0, previewCanvas.width, previewCanvas.height);
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length === 2) {
+                const hand1 = results.multiHandLandmarks[0][9];
+                const hand2 = results.multiHandLandmarks[1][9];
+                
+                // Tính khoảng cách
+                const dist = Math.sqrt(Math.pow(hand1.x - hand2.x, 2) + Math.pow(hand1.y - hand2.y, 2));
+
+                // Điều chỉnh logic khoảng cách cho phù hợp với Camera điện thoại (thường góc rộng hơn)
+                let val = (dist - 0.1) / (0.5 - 0.1); 
+                val = Math.max(0, Math.min(1, val));
+                interactionFactor += (val - interactionFactor) * 0.1;
+
+                statusEl.innerHTML = "Khoảng cách: " + Math.round(dist * 100) + "%";
+                statusEl.style.color = "#00ff88";
+                
+                drawConnectors(previewCtx, results.multiHandLandmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+            } else {
+                // Tự động trôi về trạng thái chữ nếu không thấy tay
+                interactionFactor += (0 - interactionFactor) * 0.05;
+                statusEl.innerText = results.multiHandLandmarks.length === 1 ? "Cần thêm 1 tay nữa" : "Đang tìm tay...";
+                statusEl.style.color = results.multiHandLandmarks.length === 1 ? "yellow" : "#ff4d6d";
+            }
+            previewCtx.restore();
+        }
+
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        
+        // Cấu hình nhẹ hơn cho mobile (Lite model)
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 0, // 0: Lite (Nhanh nhất), 1: Full
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+        hands.onResults(onResults);
+
+        const cameraUtils = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 480, // Giảm độ phân giải xử lý AI xuống 480p để nhanh hơn
+            height: 360,
+            facingMode: "user" // Camera trước
+        });
+        cameraUtils.start();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const positions = particles.geometry.attributes.position.array;
+            
+            for (let i = 0; i < CONFIG.particleCount; i++) {
+                const ix = i * 3;
+                const iy = i * 3 + 1;
+                const iz = i * 3 + 2;
+
+                const targetX = targetPositions[ix] + (randomPositions[ix] - targetPositions[ix]) * interactionFactor;
+                const targetY = targetPositions[iy] + (randomPositions[iy] - targetPositions[iy]) * interactionFactor;
+                const targetZ = targetPositions[iz] + (randomPositions[iz] - targetPositions[iz]) * interactionFactor;
+
+                positions[ix] += (targetX - positions[ix]) * CONFIG.morphSpeed;
+                positions[iy] += (targetY - positions[iy]) * CONFIG.morphSpeed;
+                positions[iz] += (targetZ - positions[iz]) * CONFIG.morphSpeed;
+
+                // Rung nhẹ
+                if (interactionFactor < 0.1) {
+                    positions[ix] += (Math.random() - 0.5) * 0.03;
+                    positions[iy] += (Math.random() - 0.5) * 0.03;
+                    positions[iz] += (Math.random() - 0.5) * 0.03;
+                }
+            }
+
+            particles.geometry.attributes.position.needsUpdate = true;
+            particles.rotation.y += 0.002; // Xoay chậm tự động để đẹp trên mobile
+            
+            renderer.render(scene, camera);
+        }
+
+        colorPicker.addEventListener('input', (e) => {
+            if (material) material.color.set(e.target.value);
+        });
+
+        initThree();
+    </script>
+</body>
+</html>
