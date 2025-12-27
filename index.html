@@ -67,6 +67,7 @@
             font-weight: 700;
             background: linear-gradient(to right, #ff4d6d, #ff8fa3);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
@@ -152,9 +153,9 @@
         <div id="status">Đang mở camera...</div>
         <div class="instruction">
             👋 <b>Dựng điện thoại lên & lùi ra xa.</b><br>
-            Đưa 2 tay vào khung hình:
-            <br>• <b>Khép tay:</b> I ♥ U
-            <br>• <b>Dang tay:</b> Nổ tung
+            Đưa 1 tay vào khung hình:
+            <br>• <b>Nắm tay:</b> I ♥ U
+            <br>• <b>Mở tay:</b> Nổ tung
         </div>
     </div>
 
@@ -313,27 +314,44 @@
             previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
             previewCtx.drawImage(results.image, 0, 0, previewCanvas.width, previewCanvas.height);
             
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length === 2) {
-                const hand1 = results.multiHandLandmarks[0][9];
-                const hand2 = results.multiHandLandmarks[1][9];
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length === 1) {
+                const hand = results.multiHandLandmarks[0];
                 
-                // Tính khoảng cách
-                const dist = Math.sqrt(Math.pow(hand1.x - hand2.x, 2) + Math.pow(hand1.y - hand2.y, 2));
-
-                // Điều chỉnh logic khoảng cách cho phù hợp với Camera điện thoại (thường góc rộng hơn)
-                let val = (dist - 0.1) / (0.5 - 0.1); 
+                // Phát hiện cử chỉ: Nắm tay (fist) vs Mở tay (open)
+                // Sử dụng khoảng cách từ cổ tay (0) đến đầu ngón tay (4, 8, 12, 16, 20)
+                const wrist = hand[0];
+                const thumbTip = hand[4];
+                const indexTip = hand[8];
+                const middleTip = hand[12];
+                const ringTip = hand[16];
+                const pinkyTip = hand[20];
+                
+                // Tính khoảng cách từ cổ tay đến các đầu ngón tay
+                const distThumb = Math.sqrt(Math.pow(wrist.x - thumbTip.x, 2) + Math.pow(wrist.y - thumbTip.y, 2));
+                const distIndex = Math.sqrt(Math.pow(wrist.x - indexTip.x, 2) + Math.pow(wrist.y - indexTip.y, 2));
+                const distMiddle = Math.sqrt(Math.pow(wrist.x - middleTip.x, 2) + Math.pow(wrist.y - middleTip.y, 2));
+                const distRing = Math.sqrt(Math.pow(wrist.x - ringTip.x, 2) + Math.pow(wrist.y - ringTip.y, 2));
+                const distPinky = Math.sqrt(Math.pow(wrist.x - pinkyTip.x, 2) + Math.pow(wrist.y - pinkyTip.y, 2));
+                
+                // Trung bình khoảng cách các ngón tay
+                const avgDist = (distThumb + distIndex + distMiddle + distRing + distPinky) / 5;
+                
+                // Nắm tay: khoảng cách nhỏ (< 0.15) -> interactionFactor = 0 (hiện chữ)
+                // Mở tay: khoảng cách lớn (> 0.25) -> interactionFactor = 1 (nổ tung)
+                let val = (avgDist - 0.15) / (0.25 - 0.15);
                 val = Math.max(0, Math.min(1, val));
                 interactionFactor += (val - interactionFactor) * 0.1;
 
-                statusEl.innerHTML = "Khoảng cách: " + Math.round(dist * 100) + "%";
+                const gesture = avgDist < 0.18 ? "Nắm tay" : "Mở tay";
+                statusEl.innerHTML = gesture + " (" + Math.round(avgDist * 100) + "%)";
                 statusEl.style.color = "#00ff88";
                 
                 drawConnectors(previewCtx, results.multiHandLandmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
             } else {
                 // Tự động trôi về trạng thái chữ nếu không thấy tay
                 interactionFactor += (0 - interactionFactor) * 0.05;
-                statusEl.innerText = results.multiHandLandmarks.length === 1 ? "Cần thêm 1 tay nữa" : "Đang tìm tay...";
-                statusEl.style.color = results.multiHandLandmarks.length === 1 ? "yellow" : "#ff4d6d";
+                statusEl.innerText = "Đang tìm tay...";
+                statusEl.style.color = "#ff4d6d";
             }
             previewCtx.restore();
         }
@@ -342,7 +360,7 @@
         
         // Cấu hình nhẹ hơn cho mobile (Lite model)
         hands.setOptions({
-            maxNumHands: 2,
+            maxNumHands: 1, // Chỉ cần 1 tay
             modelComplexity: 0, // 0: Lite (Nhanh nhất), 1: Full
             minDetectionConfidence: 0.5,
             minTrackingConfidence: 0.5
